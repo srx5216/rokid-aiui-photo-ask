@@ -145,6 +145,13 @@ function createCameraContext() {
 function controlFromEvent(event) {
   const code = String(event?.code || event?.key || '');
   const keyCode = Number(event?.keyCode ?? event?.which ?? 0);
+  const namedControls = [event?.code, event?.key]
+    .map((value) => String(value || '').replace(/[\s-]/g, '_').toUpperCase());
+  const hasNamedControl = (...names) => names.some((name) => namedControls.includes(name));
+
+  if (hasNamedControl('SPRITE_SWIPE_BACK', 'SPRITESWIPEBACK')) return 'up';
+  if (hasNamedControl('SPRITE_SWIPE_FORWARD', 'SPRITESWIPEFORWARD')) return 'down';
+  if (hasNamedControl('SPRITE_DOUBLE_TAP', 'SPRITEDOUBLETAP')) return 'confirm';
   if (['ArrowUp', 'Up', 'DPAD_UP'].includes(code) || keyCode === 19) return 'up';
   if (['ArrowDown', 'Down', 'DPAD_DOWN'].includes(code) || keyCode === 20) return 'down';
   if (['ArrowLeft', 'Left', 'DPAD_LEFT'].includes(code) || keyCode === 21) return 'left';
