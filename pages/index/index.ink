@@ -225,6 +225,17 @@ function runtimeLabelFor(model, reasoningEffort) {
   return model && reasoningEffort ? `${model} / ${reasoningEffort}` : '模型待同步';
 }
 
+function compactLinkLabel(label) {
+  const value = String(label || '').trim().replace(/^VPS\s*/, '');
+  if (!value || value === '未检测') return '待检';
+  if (value.startsWith('连接失败')) return '失败';
+  return value;
+}
+
+function compactRuntimeLabel(model, reasoningEffort) {
+  return model && reasoningEffort ? `${model}·${reasoningEffort}` : '待同步';
+}
+
 function phaseStatus(clarity, retakeCount) {
   if (clarity.state === 'uncertain') {
     return retakeCount ? '可能不清晰（已重拍）' : '可能不清晰';
@@ -265,11 +276,19 @@ async function createThumbnail(data, mimeType) {
 export default {
   data: {
     viewMode: 'capture',
+    pageTitle: '拍照识题',
+    headerStatus: '待授权',
     captureFocus: 0,
     answerFocus: 0,
     captureMode: 'new',
     captureHint: '连接 VPS 后，按确认拍照',
+    cameraStateLabel: '相机未连接',
+    cameraStateCopy: '请在 AIUI Studio 允许相机权限',
     cameraReady: false,
+    primaryActionLabel: '拍新题',
+    secondaryActionLabel: '查看答案',
+    primaryActionFocused: true,
+    secondaryActionFocused: false,
     records: [],
     answerScrollTop: 0,
     queueCount: 0,
@@ -279,7 +298,9 @@ export default {
     selectedModel: '',
     selectedReasoningEffort: '',
     linkLabel: 'VPS 未检测',
-    runtimeLabel: '模型待同步'
+    runtimeLabel: '模型待同步',
+    linkShort: '待检',
+    runtimeShort: '待同步'
   },
 
   onLoad() {
@@ -291,7 +312,7 @@ export default {
     this.camera = null;
 
     const records = this.loadRecords();
-    this.setData({
+    this.setViewState({
       records,
       captureHint: records.length ? '可继续拍题；答案在答案中心' : '连接 VPS 后，按确认拍照'
     });
@@ -305,13 +326,13 @@ export default {
   onReady() {
     this.camera = createCameraContext();
     if (!this.camera) {
-      this.setData({
+      this.setViewState({
         cameraReady: false,
-        captureHint: '相机不可用：请在 AIUI Studio 允许相机权限'
+        captureHint: '请先允许相机权限，再按确认拍题'
       });
       return;
     }
-    this.setData({ cameraReady: true });
+    this.setViewState({ cameraReady: true });
   },
 
   onUnload() {
@@ -326,6 +347,36 @@ export default {
     this.jobs = [];
     this.activeJob = null;
     this.camera = null;
+  },
+
+  presentationFor(overrides = {}) {
+    const state = { ...this.data, ...overrides };
+    const isCapture = state.viewMode === 'capture';
+    const primaryActionFocused = isCapture ? state.captureFocus === 0 : state.answerFocus === 3;
+    const secondaryActionFocused = isCapture ? state.captureFocus === 1 : state.answerFocus === 4;
+    const queueCount = Number(state.queueCount || 0);
+    const cameraReady = Boolean(state.cameraReady);
+
+    return {
+      pageTitle: isCapture ? '拍照识题' : '答案中心',
+      headerStatus: cameraReady ? (queueCount ? `处理中 ${queueCount}` : '就绪') : '待授权',
+      cameraStateLabel: cameraReady ? '对准题目' : '相机未连接',
+      cameraStateCopy: cameraReady
+        ? (queueCount ? `后台正在处理 ${queueCount} 题，仍可继续拍摄` : '确认键拍照，答案会留在答案中心')
+        : '请在 AIUI Studio 允许相机权限',
+      primaryActionLabel: isCapture
+        ? (state.captureMode === 'retake' ? '重拍' : '拍新题')
+        : '返回拍照',
+      secondaryActionLabel: isCapture ? '查看答案' : '清空记录',
+      primaryActionFocused,
+      secondaryActionFocused,
+      linkShort: compactLinkLabel(state.linkLabel),
+      runtimeShort: compactRuntimeLabel(state.selectedModel, state.selectedReasoningEffort)
+    };
+  },
+
+  setViewState(patch = {}) {
+    this.setData({ ...patch, ...this.presentationFor(patch) });
   },
 
   onKeyUp(event) {
@@ -351,35 +402,37 @@ export default {
   handleCameraError(event) {
     this.camera = null;
     const message = String(event?.detail?.errMsg || '无法启动眼镜相机。');
-    this.setData({
+    this.setViewState({
       cameraReady: false,
-      captureHint: `相机不可用：${message}`
+      captureHint: `相机未启动：${message}`
     });
   },
 
-  handleCaptureTap() {
-    this.setData({ captureFocus: 0 });
-    this.captureAndEnqueue(this.data.captureMode);
-  },
-
-  handleAnswersTap() {
-    this.showAnswers();
-  },
-
-  handleCameraTap() {
+  handlePrimaryTap() {
+    if (this.data.viewMode === 'capture') {
+      this.setViewState({ captureFocus: 0 });
+      this.captureAndEnqueue(this.data.captureMode);
+      return;
+    }
     this.showCapture();
   },
 
-  handleClearTap() {
+  handleSecondaryTap() {
+    if (this.data.viewMode === 'capture') {
+      this.setViewState({ captureFocus: 1 });
+      this.showAnswers();
+      return;
+    }
+    this.setViewState({ answerFocus: 4 });
     this.clearCompletedRecords();
   },
 
   activateFocusedControl() {
     if (this.data.viewMode === 'capture') {
       if (this.data.captureFocus === 0) {
-        this.captureAndEnqueue(this.data.captureMode);
+        this.handlePrimaryTap();
       } else {
-        this.showAnswers();
+        this.handleSecondaryTap();
       }
       return;
     }
@@ -393,14 +446,14 @@ export default {
       return;
     }
     if (this.data.answerFocus === 2) {
-      this.setData({ captureHint: '答案区：上下滚动，左右切换焦点' });
+      this.setViewState({ captureHint: '答案区：上下滚动，左右切换焦点' });
       return;
     }
     if (this.data.answerFocus === 3) {
-      this.showCapture();
+      this.handlePrimaryTap();
       return;
     }
-    this.clearCompletedRecords();
+    this.handleSecondaryTap();
   },
 
   handleCaptureDirection(control) {
@@ -412,7 +465,7 @@ export default {
       this.toggleCaptureMode();
       return;
     }
-    this.setData({ captureFocus: this.data.captureFocus === 0 ? 1 : 0 });
+    this.setViewState({ captureFocus: this.data.captureFocus === 0 ? 1 : 0 });
   },
 
   handleAnswerDirection(control) {
@@ -426,7 +479,7 @@ export default {
         this.scrollAnswers(1);
         return;
       }
-      this.setData({ answerFocus: control === 'left' ? 1 : 3 });
+      this.setViewState({ answerFocus: control === 'left' ? 1 : 3 });
       return;
     }
 
@@ -439,18 +492,18 @@ export default {
       return;
     }
     if (control === 'left' || control === 'right') {
-      this.setData({ answerFocus: focus === 3 ? 4 : 3 });
+      this.setViewState({ answerFocus: focus === 3 ? 4 : 3 });
       return;
     }
 
     const nextFocus = Math.max(0, Math.min(4, focus + (control === 'up' ? -1 : 1)));
-    this.setData({ answerFocus: nextFocus });
+    this.setViewState({ answerFocus: nextFocus });
   },
 
   toggleCaptureMode() {
     if (!this.data.retakeTargetId) return;
     const captureMode = this.data.captureMode === 'retake' ? 'new' : 'retake';
-    this.setData({
+    this.setViewState({
       captureMode,
       captureHint: captureMode === 'retake'
         ? '将替换最近的模糊/失败题；左右可切换拍新题'
@@ -459,7 +512,7 @@ export default {
   },
 
   showAnswers() {
-    this.setData({
+    this.setViewState({
       viewMode: 'answers',
       answerFocus: 0,
       answerScrollTop: 0,
@@ -468,7 +521,7 @@ export default {
   },
 
   showCapture() {
-    this.setData({
+    this.setViewState({
       viewMode: 'capture',
       captureFocus: 0,
       captureMode: this.data.retakeTargetId ? 'retake' : 'new',
@@ -488,13 +541,13 @@ export default {
   cycleModel() {
     const options = this.data.modelOptions;
     if (!options.length) {
-      this.setData({ captureHint: '模型列表尚未从 VPS 获取' });
+      this.setViewState({ captureHint: '模型列表尚未从 VPS 获取' });
       this.refreshHealth();
       return;
     }
     const index = options.indexOf(this.data.selectedModel);
     const selectedModel = options[(index + 1 + options.length) % options.length];
-    this.setData({
+    this.setViewState({
       selectedModel,
       runtimeLabel: runtimeLabelFor(selectedModel, this.data.selectedReasoningEffort),
       captureHint: '模型设置将应用到之后新拍的题目'
@@ -504,13 +557,13 @@ export default {
   cycleReasoning() {
     const options = this.data.reasoningOptions;
     if (!options.length) {
-      this.setData({ captureHint: '推理档位尚未从 VPS 获取' });
+      this.setViewState({ captureHint: '推理档位尚未从 VPS 获取' });
       this.refreshHealth();
       return;
     }
     const index = options.indexOf(this.data.selectedReasoningEffort);
     const selectedReasoningEffort = options[(index + 1 + options.length) % options.length];
-    this.setData({
+    this.setViewState({
       selectedReasoningEffort,
       runtimeLabel: runtimeLabelFor(this.data.selectedModel, selectedReasoningEffort),
       captureHint: '推理档位将应用到之后新拍的题目'
@@ -523,14 +576,14 @@ export default {
     try {
       const token = this.readToken();
       if (!token) {
-        this.setData({ linkLabel: 'VPS 未配对', runtimeLabel: '模型待同步' });
+        this.setViewState({ linkLabel: 'VPS 未配对', runtimeLabel: '模型待同步' });
         return;
       }
 
       const startedAt = Date.now();
       const result = healthFrom(await requestHealth(token));
       if (!result.ok) {
-        this.setData({
+        this.setViewState({
           linkLabel: result.statusCode === 401 ? 'VPS 未授权' : 'VPS 不可达'
         });
         return;
@@ -549,7 +602,7 @@ export default {
         reasoningOptions,
         result.runtime.reasoningEffort
       );
-      this.setData({
+      this.setViewState({
         modelOptions,
         reasoningOptions,
         selectedModel,
@@ -558,7 +611,7 @@ export default {
         runtimeLabel: runtimeLabelFor(selectedModel, selectedReasoningEffort)
       });
     } catch {
-      this.setData({ linkLabel: 'VPS 连接失败' });
+      this.setViewState({ linkLabel: 'VPS 连接失败' });
     } finally {
       this.healthBusy = false;
     }
@@ -590,7 +643,7 @@ export default {
         .map(toPersistentRecord);
       wx.setStorageSync(RECORDS_KEY, records);
     } catch {
-      this.setData({ captureHint: '本地保存失败；本次答案仍可查看' });
+      this.setViewState({ captureHint: '本地保存失败；本次答案仍可查看' });
     }
   },
 
@@ -616,13 +669,13 @@ export default {
   },
 
   updateQueueCount() {
-    this.setData({ queueCount: this.queueSize() });
+    this.setViewState({ queueCount: this.queueSize() });
   },
 
   clearCompletedRecords() {
     const records = this.data.records.filter((record) => !isTerminalRecord(record));
     const targetStillExists = records.some((record) => record.id === this.data.retakeTargetId);
-    this.setData({
+    this.setViewState({
       records,
       retakeTargetId: targetStillExists ? this.data.retakeTargetId : '',
       captureMode: targetStillExists ? this.data.captureMode : 'new',
@@ -634,30 +687,30 @@ export default {
   async captureAndEnqueue(mode) {
     if (this.capturing) return;
     if (this.queueSize() >= MAX_PENDING_JOBS) {
-      this.setData({ captureHint: `队列已满（${MAX_PENDING_JOBS}），请等待一题完成` });
+      this.setViewState({ captureHint: `队列已满（${MAX_PENDING_JOBS}），请等待一题完成` });
       return;
     }
     if (!this.camera || !this.data.cameraReady) {
-      this.setData({ captureHint: '相机不可用：请检查 AIUI 相机权限' });
+      this.setViewState({ captureHint: '相机未连接：请在 AIUI Studio 允许相机权限' });
       return;
     }
 
     const token = this.readToken();
     if (!token) {
-      this.setData({ captureHint: '尚未配对：请先写入本机连接令牌' });
+      this.setViewState({ captureHint: '尚未配对：请先写入本机连接令牌' });
       return;
     }
     const model = this.data.selectedModel;
     const reasoningEffort = this.data.selectedReasoningEffort;
     if (!model || !reasoningEffort) {
-      this.setData({ captureHint: '正在同步 VPS 模型，请稍后再拍' });
+      this.setViewState({ captureHint: '正在同步 VPS 模型，请稍后再拍' });
       this.refreshHealth();
       return;
     }
 
     const target = mode === 'retake' ? this.findRecord(this.data.retakeTargetId) : null;
     this.capturing = true;
-    this.setData({
+    this.setViewState({
       captureFocus: 0,
       captureHint: target ? '正在重拍' : '正在拍照'
     });
@@ -691,7 +744,7 @@ export default {
           thumbnailUri,
           retakeCount
         });
-        this.setData({ retakeTargetId: '', captureMode: 'new' });
+        this.setViewState({ retakeTargetId: '', captureMode: 'new' });
       } else {
         recordId = newRecordId();
         this.appendRecord({
@@ -722,13 +775,13 @@ export default {
       });
       imageBase64 = '';
       this.updateQueueCount();
-      this.setData({
+      this.setViewState({
         captureHint: `已加入队列（${this.data.queueCount}/${MAX_PENDING_JOBS}），可继续拍下一题`
       });
       this.processQueue();
     } catch (error) {
       const reason = String(error?.message || error || '拍照失败。');
-      this.setData({ captureHint: reason });
+      this.setViewState({ captureHint: reason });
     } finally {
       this.capturing = false;
       imageBase64 = '';
@@ -774,13 +827,13 @@ export default {
         });
         this.persistRecords();
         if (phase === 'uncertain') {
-          this.setData({
+          this.setViewState({
             retakeTargetId: job.id,
             captureMode: 'retake',
             captureHint: '这题可能不清晰；拍照按钮默认重拍，左右可切换拍新题'
           });
         } else {
-          this.setData({ captureHint: '已完成；可继续拍下一题或打开答案中心' });
+          this.setViewState({ captureHint: '已完成；可继续拍下一题或打开答案中心' });
         }
       }
       this.refreshHealth();
@@ -815,7 +868,7 @@ export default {
       }
     });
     this.persistRecords();
-    this.setData({
+    this.setViewState({
       retakeTargetId: job.id,
       captureMode: 'retake',
       captureHint: '本题失败；拍照按钮默认重拍，左右可切换拍新题'
@@ -827,8 +880,16 @@ export default {
 <page>
   <view class="screen">
     <view class="topbar">
-      <text class="title">{{ viewMode === 'capture' ? '拍照识题' : '答案中心' }}</text>
-      <text class="hint">{{ captureHint }}</text>
+      <view class="topbar-row">
+        <view class="title-stack">
+          <text class="eyebrow">学习助手</text>
+          <text class="title">{{ pageTitle }}</text>
+        </view>
+        <view class="header-chip {{ cameraReady ? 'ready' : 'waiting' }}">
+          <text>{{ headerStatus }}</text>
+        </view>
+      </view>
+      <text class="topbar-note">{{ viewMode === 'capture' ? '连续拍摄，不等答案' : '向上查看模型，向下阅读答案' }}</text>
     </view>
 
     <view class="main">
@@ -840,9 +901,14 @@ export default {
           flash="off"
           binderror="handleCameraError"
         />
-        <view class="camera-overlay">
-          <text class="camera-copy">对准题目 · 按确认拍照</text>
-          <text class="camera-copy-small">{{ queueCount ? '后台正在处理，可继续拍' : '图片只在解题队列中暂存' }}</text>
+        <view class="camera-overlay {{ cameraReady ? 'camera-live' : 'camera-offline' }}">
+          <view class="camera-status">
+            <text class="camera-state-label">{{ cameraStateLabel }}</text>
+            <text class="camera-state-copy">{{ cameraStateCopy }}</text>
+          </view>
+          <view class="camera-hint">
+            <text>{{ captureHint }}</text>
+          </view>
         </view>
       </view>
 
@@ -866,15 +932,15 @@ export default {
           </view>
         </view>
 
-        <view wx:if="{{ records.length === 0 }}" class="empty-card">
+        <view ink:if="{{ records.length === 0 }}" class="empty-card">
           <text class="empty-title">还没有题目</text>
           <text class="empty-copy">返回拍照后按确认；每题的完整答案会留在这里。</text>
         </view>
 
-        <view wx:for="{{ records }}" wx:key="id" class="answer-card">
+        <view ink:for="{{ records }}" ink:key="id" class="answer-card">
           <view class="card-head">
-            <image wx:if="{{ item.thumbnailUri }}" class="thumbnail" src="{{ item.thumbnailUri }}" mode="aspectFill" />
-            <view wx:else class="thumbnail-placeholder">
+            <image ink:if="{{ item.thumbnailUri }}" class="thumbnail" src="{{ item.thumbnailUri }}" mode="aspectFill" />
+            <view ink:else class="thumbnail-placeholder">
               <text>题图</text>
             </view>
             <view class="card-meta">
@@ -883,41 +949,37 @@ export default {
             </view>
           </view>
           <text class="question">{{ item.question }}</text>
-          <text wx:if="{{ item.shortAnswer }}" class="short-answer">{{ item.shortAnswer }}</text>
+          <text ink:if="{{ item.shortAnswer }}" class="short-answer">{{ item.shortAnswer }}</text>
           <text class="full-answer">{{ item.fullAnswer || '正在等待结果…' }}</text>
-          <view wx:if="{{ item.steps.length }}" class="steps">
-            <text wx:for="{{ item.steps }}" wx:for-item="step" wx:key="*this" class="step">• {{ step }}</text>
+          <view ink:if="{{ item.steps.length }}" class="steps">
+            <text ink:for="{{ item.steps }}" ink:for-item="step" ink:key="*this" class="step">• {{ step }}</text>
           </view>
-          <text wx:if="{{ item.clarity.reason }}" class="clarity">{{ item.clarity.reason }}</text>
+          <text ink:if="{{ item.clarity.reason }}" class="clarity">{{ item.clarity.reason }}</text>
         </view>
       </scroll-view>
     </view>
 
     <view class="actions">
       <button
-        wx:if="{{ viewMode === 'capture' }}"
-        class="action {{ captureFocus === 0 ? 'selected' : '' }}"
-        bindtap="handleCaptureTap"
-      >{{ captureMode === 'retake' ? '重拍' : '拍新题' }}</button>
+        class="action action-primary {{ primaryActionFocused ? 'selected' : '' }}"
+        bindtap="handlePrimaryTap"
+      >{{ primaryActionLabel }}</button>
       <button
-        wx:if="{{ viewMode === 'capture' }}"
-        class="action {{ captureFocus === 1 ? 'selected' : '' }}"
-        bindtap="handleAnswersTap"
-      >答案 {{ records.length }}</button>
-      <button
-        wx:if="{{ viewMode === 'answers' }}"
-        class="action {{ answerFocus === 3 ? 'selected' : '' }}"
-        bindtap="handleCameraTap"
-      >拍照</button>
-      <button
-        wx:if="{{ viewMode === 'answers' }}"
-        class="action {{ answerFocus === 4 ? 'selected' : '' }}"
-        bindtap="handleClearTap"
-      >清空完成</button>
+        class="action action-secondary {{ secondaryActionFocused ? 'selected' : '' }}"
+        bindtap="handleSecondaryTap"
+      >{{ secondaryActionLabel }}</button>
     </view>
 
     <view class="footer">
-      <text class="footer-text">{{ linkLabel }} · {{ runtimeLabel }} · 队列 {{ queueCount }}/5</text>
+      <view class="footer-cell footer-link">
+        <text class="footer-key">VPS</text>
+        <text class="footer-value">{{ linkShort }}</text>
+      </view>
+      <view class="footer-cell footer-runtime">
+        <text class="footer-key">模型</text>
+        <text class="footer-value">{{ runtimeShort }}</text>
+      </view>
+      <text class="footer-queue">{{ queueCount }}/5</text>
     </view>
   </view>
 </page>
@@ -930,36 +992,79 @@ export default {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 12px;
-  background-color: var(--color-background, #000000);
-  color: var(--color-text-primary, #40ff5e);
+  padding: 16px;
+  background-color: #0b0e0c;
+  color: #f2f5f1;
 }
 
 .topbar {
   flex-shrink: 0;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--color-border, rgba(64, 255, 94, 0.45));
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2a342d;
+}
+
+.topbar-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.title-stack {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: block;
+  font-size: 18px;
+  line-height: 22px;
+  letter-spacing: 2px;
+  color: #9eaaa0;
 }
 
 .title {
   display: block;
-  font-size: 24px;
-  line-height: 30px;
-  color: var(--color-text-primary, #40ff5e);
+  margin-top: 2px;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 600;
+  color: #f7faf5;
 }
 
-.hint {
-  display: block;
-  margin-top: 4px;
+.header-chip {
+  flex-shrink: 0;
+  min-width: 56px;
+  padding: 4px 8px;
+  border: 1px solid #3b4740;
+  border-radius: 12px;
   font-size: 18px;
   line-height: 24px;
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  text-align: center;
+}
+
+.header-chip.ready {
+  border-color: #4e7f56;
+  color: #91e087;
+  background-color: #17251a;
+}
+
+.header-chip.waiting {
+  color: #d8c882;
+  background-color: #211f15;
+}
+
+.topbar-note {
+  display: block;
+  margin-top: 5px;
+  font-size: 18px;
+  line-height: 25px;
+  color: #aab4ab;
 }
 
 .main {
   flex: 1;
   min-height: 0;
-  margin: 10px 0;
+  margin: 12px 0;
   position: relative;
 }
 
@@ -977,63 +1082,103 @@ export default {
 .capture-panel {
   position: relative;
   overflow: hidden;
-  border: 2px solid var(--color-primary, #40ff5e);
-  border-radius: 10px;
-  background-color: #0b130d;
+  border: 1px solid #3b4740;
+  border-radius: 16px;
+  background-color: #141914;
 }
 
 .capture-camera {
+  display: block;
   width: 100%;
   height: 100%;
 }
 
 .camera-overlay {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  padding: 8px;
-  background-color: rgba(0, 0, 0, 0.64);
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
 }
 
-.camera-copy {
+.camera-status {
+  position: absolute;
+  right: 14px;
+  bottom: 64px;
+  left: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background-color: rgba(8, 11, 9, 0.72);
+}
+
+.camera-offline {
+  background-color: #141914;
+}
+
+.camera-offline .camera-status {
+  top: 35%;
+  right: 22px;
+  bottom: auto;
+  left: 22px;
+  padding: 0;
+  border-color: transparent;
+  background-color: transparent;
+  text-align: center;
+}
+
+.camera-state-label {
   display: block;
-  font-size: 22px;
-  line-height: 28px;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 600;
   color: #ffffff;
 }
 
-.camera-copy-small {
+.camera-state-copy {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 18px;
-  line-height: 24px;
-  color: rgba(255, 255, 255, 0.82);
+  line-height: 25px;
+  color: #c5cdc4;
+}
+
+.camera-hint {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 8px 12px;
+  font-size: 18px;
+  line-height: 25px;
+  color: #d9e2d8;
+  background-color: rgba(8, 11, 9, 0.82);
 }
 
 .answer-scroll {
-  padding-right: 2px;
+  padding-right: 3px;
 }
 
 .settings-card,
 .answer-card,
 .empty-card {
   box-sizing: border-box;
-  margin-bottom: 10px;
-  padding: 10px;
-  border: 2px solid var(--color-border, rgba(64, 255, 94, 0.45));
-  border-radius: 10px;
-  background-color: rgba(18, 38, 21, 0.55);
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #354037;
+  border-radius: 14px;
+  background-color: #151a16;
 }
 
 .setting {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: 38px;
-  margin: 3px 0;
-  padding: 2px 6px;
+  min-height: 42px;
+  margin: 4px 0;
+  padding: 3px 8px;
   border: 1px solid transparent;
+  border-radius: 8px;
 }
 
 .setting-label,
@@ -1043,17 +1188,16 @@ export default {
 }
 
 .setting-value {
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  color: #bcc7bd;
 }
 
-.selected {
-  color: #000000 !important;
-  border-color: var(--color-primary, #40ff5e) !important;
-  background-color: var(--color-primary, #40ff5e) !important;
+.setting.selected {
+  border-color: #5c9364;
+  background-color: #1d3020;
 }
 
-.selected .setting-value {
-  color: #000000;
+.setting.selected .setting-value {
+  color: #f4f9f3;
 }
 
 .empty-title {
@@ -1067,7 +1211,7 @@ export default {
   margin-top: 6px;
   font-size: 18px;
   line-height: 26px;
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  color: #b3bdb3;
 }
 
 .card-head {
@@ -1081,8 +1225,8 @@ export default {
   width: 92px;
   height: 70px;
   flex-shrink: 0;
-  border: 1px solid var(--color-border, rgba(64, 255, 94, 0.45));
-  border-radius: 6px;
+  border: 1px solid #435047;
+  border-radius: 8px;
 }
 
 .thumbnail-placeholder {
@@ -1090,7 +1234,7 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  color: #aeb9af;
 }
 
 .card-meta {
@@ -1113,7 +1257,7 @@ export default {
   margin-top: 2px;
   font-size: 18px;
   line-height: 23px;
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  color: #aeb9af;
 }
 
 .question,
@@ -1137,14 +1281,14 @@ export default {
   margin-top: 7px;
   font-size: 21px;
   line-height: 29px;
-  color: var(--color-primary, #40ff5e);
+  color: #9be992;
 }
 
 .full-answer {
   margin-top: 7px;
   font-size: 19px;
   line-height: 28px;
-  color: var(--color-text-primary, #40ff5e);
+  color: #edf2ec;
 }
 
 .steps {
@@ -1155,7 +1299,7 @@ export default {
 .clarity {
   font-size: 18px;
   line-height: 26px;
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  color: #b6c0b7;
 }
 
 .clarity {
@@ -1166,35 +1310,96 @@ export default {
   flex-shrink: 0;
   display: flex;
   flex-direction: row;
-  gap: 10px;
+  gap: 8px;
 }
 
 .action {
   flex-grow: 1;
   flex-basis: 0;
-  height: 48px;
+  height: 54px;
   box-sizing: border-box;
-  border: 2px solid var(--color-primary, #40ff5e);
-  border-radius: 8px;
+  border: 1px solid #4c584f;
+  border-radius: 12px;
   font-size: 21px;
   line-height: 28px;
+  font-weight: 600;
   text-align: center;
-  color: var(--color-primary, #40ff5e);
-  background-color: var(--color-background, #000000);
+  color: #e8eee7;
+  background-color: #171d19;
+}
+
+.action-primary {
+  border-color: #649d68;
+  color: #a4ed9d;
+}
+
+.action.selected {
+  border-color: #83e578;
+  color: #0c120d;
+  background-color: #83e578;
+}
+
+.action-secondary.selected {
+  border-color: #5e8964;
+  color: #eff6ee;
+  background-color: #26372a;
 }
 
 .footer {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #263028;
   overflow: hidden;
 }
 
-.footer-text {
-  display: block;
+.footer-cell {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-width: 0;
   overflow: hidden;
+  white-space: nowrap;
+}
+
+.footer-link {
+  flex: 1;
+}
+
+.footer-runtime {
+  flex: 2;
+}
+
+.footer-key,
+.footer-value,
+.footer-queue {
   font-size: 18px;
   line-height: 24px;
+}
+
+.footer-key {
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: #849086;
+}
+
+.footer-value {
+  display: block;
+  min-width: 0;
   white-space: nowrap;
-  color: var(--color-text-secondary, rgba(64, 255, 94, 0.78));
+  overflow: hidden;
+  color: #c2ccc2;
+}
+
+.footer-queue {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid #3b4740;
+  border-radius: 8px;
+  color: #a8e7a1;
 }
 </style>
