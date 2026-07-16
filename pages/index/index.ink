@@ -77,6 +77,7 @@ export default {
     status: '就绪',
     answer: '等待拍照',
     showingHistory: false,
+    showingPreview: true,
     history: [],
     historyIndex: -1,
     selectedAction: 0,
@@ -100,7 +101,8 @@ export default {
     if (!this.camera) {
       this.setData({
         status: '相机不可用',
-        answer: '当前 AIUI 运行环境没有提供相机能力。'
+        answer: '当前 AIUI 运行环境没有提供相机能力。',
+        showingPreview: false
       });
     }
   },
@@ -132,14 +134,14 @@ export default {
   },
 
   handleCapture() {
-    this.setData({ selectedAction: 0 });
+    this.setData({ selectedAction: 0, showingPreview: true });
     this.captureAndAsk();
   },
 
   handleCameraError(event) {
     this.camera = null;
     const message = String(event?.detail?.errMsg || '无法启动眼镜相机。');
-    this.setData({ status: '相机不可用', answer: message });
+    this.setData({ status: '相机不可用', answer: message, showingPreview: false });
   },
 
   showNextHistory() {
@@ -148,6 +150,7 @@ export default {
       this.setData({
         selectedAction: 1,
         showingHistory: true,
+        showingPreview: false,
         historyIndex: -1,
         status: '暂无历史',
         answer: '先拍一道题，答案会自动保存。',
@@ -162,6 +165,7 @@ export default {
     this.setData({
       selectedAction: 1,
       showingHistory: true,
+      showingPreview: false,
       historyIndex,
       status: `历史 ${historyIndex + 1}/${history.length}`,
       answer: historyEntryText(item),
@@ -174,7 +178,8 @@ export default {
     if (!this.camera) {
       this.setData({
         status: '相机不可用',
-        answer: '请重开应用；若仍失败，请在 AIUI Studio 允许相机权限。'
+        answer: '请重开应用；若仍失败，请在 AIUI Studio 允许相机权限。',
+        showingPreview: false
       });
       return;
     }
@@ -197,6 +202,7 @@ export default {
     this.setData({
       busy: true,
       showingHistory: false,
+      showingPreview: true,
       historyIndex: -1,
       selectedAction: 0,
       status: '正在拍照',
@@ -210,11 +216,12 @@ export default {
         throw new Error('低画质拍照后图片仍超过上传限制。');
       }
 
-      this.setData({ status: '正在解题', answer: '等待 VPS Codex 返回' });
+      this.setData({ showingPreview: false, status: '正在解题', answer: '等待 VPS Codex 返回' });
       const result = answerFrom(await requestPhotoAnswer(imageBase64, token));
       if (!result.ok) {
         this.setData({
           busy: false,
+          showingPreview: false,
           status: result.statusCode === 401 ? '未授权' : '服务异常',
           answer: result.answer,
           scrollTop: 0
@@ -229,6 +236,7 @@ export default {
       wx.setStorageSync(HISTORY_KEY, history);
       this.setData({
         busy: false,
+        showingPreview: false,
         status: result.ok ? '完成' : '服务异常',
         answer: result.answer,
         history,
@@ -239,6 +247,7 @@ export default {
       const reason = String(error?.message || error || '无法连接后台服务。');
       this.setData({
         busy: false,
+        showingPreview: false,
         status: '连接失败',
         answer: `${reason}\n\n请检查眼镜 Wi-Fi，或确认 Hi Rokid 已通过蓝牙连接 iPhone。`,
         scrollTop: 0
@@ -250,20 +259,22 @@ export default {
 
 <page>
   <view class="screen">
-    <camera
-      id="photo-camera"
-      class="capture-camera"
-      device-position="back"
-      flash="off"
-      binderror="handleCameraError"
-    />
     <view class="status-row">
       <text class="status">{{ status }}</text>
     </view>
 
-    <scroll-view class="answer" scroll-y="true" scroll-top="{{ scrollTop }}">
-      <text class="answer-text">{{ answer }}</text>
-    </scroll-view>
+    <view class="content">
+      <camera
+        id="photo-camera"
+        class="capture-camera {{ showingPreview ? 'capture-camera-preview' : 'capture-camera-hidden' }}"
+        device-position="back"
+        flash="off"
+        binderror="handleCameraError"
+      />
+      <scroll-view class="answer {{ showingPreview ? 'answer-hidden' : '' }}" scroll-y="true" scroll-top="{{ scrollTop }}">
+        <text class="answer-text">{{ answer }}</text>
+      </scroll-view>
+    </view>
 
     <view class="actions">
       <button
@@ -290,11 +301,27 @@ export default {
   color: var(--color-text-primary, #40ff5e);
 }
 
-.capture-camera {
+.content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  margin: 8px 0;
+}
+
+.capture-camera,
+.answer {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: 100%;
+  height: 100%;
+}
+
+.capture-camera-preview {
+  opacity: 1;
+}
+
+.capture-camera-hidden {
   opacity: 0;
+  pointer-events: none;
 }
 
 .status-row {
@@ -311,9 +338,13 @@ export default {
 }
 
 .answer {
-  height: 232px;
   box-sizing: border-box;
-  padding: 14px 2px;
+  padding: 12px 2px;
+  background-color: var(--color-background, #000000);
+}
+
+.answer-hidden {
+  visibility: hidden;
 }
 
 .answer-text {
@@ -326,19 +357,19 @@ export default {
 }
 
 .actions {
-  height: 54px;
+  height: 42px;
   display: flex;
   gap: 12px;
 }
 
 .action {
   flex: 1;
-  height: 54px;
+  height: 42px;
   box-sizing: border-box;
   border: 2px solid var(--color-primary, #40ff5e);
   border-radius: 8px;
-  font-size: 20px;
-  line-height: 28px;
+  font-size: 18px;
+  line-height: 22px;
   text-align: center;
   color: var(--color-primary, #40ff5e);
   background-color: var(--color-background, #000000);
