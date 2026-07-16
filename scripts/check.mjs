@@ -27,7 +27,7 @@ assert.match(page, /handleCameraError\(event\)/);
 assert.match(page, /showingPreview: true/);
 assert.match(page, /capture-camera-preview/);
 assert.match(page, /answer-hidden/);
-assert.match(page, /\.content[\s\S]*flex: 1/);
+assert.match(page, /\.content[\s\S]*height: 240px[\s\S]*order: 1/);
 assert.match(page, /\.actions[\s\S]*height: 42px/);
 assert.match(page, /wx\.arrayBufferToBase64/);
 assert.match(page, /\/v1\/ask\/photo/);

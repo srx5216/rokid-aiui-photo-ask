@@ -74,7 +74,7 @@ function isConfirmKey(event, code) {
 export default {
   data: {
     busy: false,
-    status: '就绪',
+    status: '对准题目后按拍照',
     answer: '等待拍照',
     showingHistory: false,
     showingPreview: true,
@@ -296,23 +296,26 @@ export default {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-md, 16px);
+  padding: 10px;
   background-color: var(--color-background, #000000);
   color: var(--color-text-primary, #40ff5e);
 }
 
 .content {
-  flex: 1;
-  min-height: 0;
+  height: 240px;
+  flex-shrink: 0;
+  order: 1;
   position: relative;
-  margin: 8px 0;
+  margin: 6px 0;
 }
 
 .capture-camera,
 .answer {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: 240px;
 }
 
 .capture-camera-preview {
@@ -325,7 +328,9 @@ export default {
 }
 
 .status-row {
-  height: 34px;
+  height: 28px;
+  flex-shrink: 0;
+  order: 0;
   display: flex;
   align-items: center;
   border-bottom: 2px solid var(--color-border, rgba(64, 255, 94, 0.45));
@@ -358,6 +363,8 @@ export default {
 
 .actions {
   height: 42px;
+  flex-shrink: 0;
+  order: 2;
   display: flex;
   gap: 12px;
 }
