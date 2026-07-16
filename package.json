@@ -1,9 +1,9 @@
 {
   "name": "aiui-photo-ask-prototype",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "AIUI proof of concept for repeated Rokid photo questions and swipe history",
+  "description": "AIUI prototype for Rokid continuous photo questions, answer center, and VPS runtime status",
   "main": "app.js",
   "scripts": {
     "check": "node --experimental-vm-modules scripts/check.mjs"

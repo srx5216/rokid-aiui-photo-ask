@@ -2,8 +2,8 @@
 
 ## Identity
 - **Name**: Rokid Photo Ask
-- **Version**: 0.2.0
-- **Description**: Repeatedly photograph study questions, show Chinese answers, and browse local history with swipe focus on Rokid Glasses.
+- **Version**: 0.3.0
+- **Description**: 用镜腿触控连续拍摄学习题目，显示逐题完整答案、清晰度、模型状态与本地缩略记录。
 - **Author**: yuanx
 
 ## Capabilities
