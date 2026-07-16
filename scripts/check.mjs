@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+
+const root = new URL('../', import.meta.url);
+const app = JSON.parse(await readFile(new URL('app.json', root), 'utf8'));
+const page = await readFile(new URL('pages/index/index.ink', root), 'utf8');
+const scriptSetup = page.match(/<script setup>([\s\S]*?)<\/script>/);
+
+assert.deepEqual(app.pages, ['pages/index/index']);
+assert.ok(scriptSetup);
+new vm.SourceTextModule(scriptSetup[1]);
+assert.match(page, /onKeyUp\(event\)/);
+assert.match(page, /code === 'ArrowUp' \|\| code === 'ArrowDown'/);
+assert.match(page, /keyCode === 19 \|\| keyCode === 20/);
+assert.match(page, /function isConfirmKey\(event, code\)/);
+assert.match(page, /keyCode === 23/);
+assert.match(page, /keyCode === 66/);
+assert.match(page, /activateSelectedAction\(\)/);
+assert.match(page, /selectedAction: this\.data\.selectedAction === 0 \? 1 : 0/);
+assert.match(page, /function createCameraContext\(\)/);
+assert.match(page, /wx\.media\?\.createCameraContext/);
+assert.match(page, /wx\.createCameraContext\('photo-camera'\)/);
+assert.match(page, /camera\.takePhoto\(\{ quality: 'low' \}\)/);
+assert.match(page, /<camera[\s\S]*id="photo-camera"[\s\S]*binderror="handleCameraError"/);
+assert.match(page, /handleCameraError\(event\)/);
+assert.match(page, /wx\.arrayBufferToBase64/);
+assert.match(page, /\/v1\/ask\/photo/);
+assert.match(page, /wx\.setStorageSync\(HISTORY_KEY/);
+assert.match(page, /showNextHistory\(\)/);
+assert.match(page, /\(this\.data\.historyIndex \+ 1\) % history\.length/);
+assert.match(page, /selectedAction === 0 \? 'selected'/);
+assert.match(page, /selectedAction === 1 \? 'selected'/);
+assert.match(page, /<scroll-view[^>]+scroll-y="true"/);
+assert.match(page, /if \(!result\.ok\)[\s\S]+return;[\s\S]+const history/);
+assert.doesNotMatch(page, /setInterval|setTimeout|health.*request/i);
+assert.doesNotMatch(page, /cursor|mouse/i);
+assert.doesNotMatch(page, /Bearer [A-Za-z0-9_-]{16,}/);
+
+console.log('AIUI photo ask prototype check passed.');

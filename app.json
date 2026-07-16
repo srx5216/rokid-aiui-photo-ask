@@ -1,0 +1,11 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "拍照识题",
+    "viewport": {
+      "width": "device-width"
+    }
+  }
+}

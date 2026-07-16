@@ -1,0 +1,12 @@
+{
+  "name": "aiui-photo-ask-prototype",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "AIUI proof of concept for repeated Rokid photo questions and swipe history",
+  "main": "app.js",
+  "scripts": {
+    "check": "node --experimental-vm-modules scripts/check.mjs"
+  },
+  "dependencies": {}
+}
