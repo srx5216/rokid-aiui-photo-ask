@@ -366,11 +366,13 @@ export default {
   flex-shrink: 0;
   order: 2;
   display: flex;
+  flex-direction: row;
   gap: 12px;
 }
 
 .action {
-  flex: 1;
+  flex-grow: 1;
+  flex-basis: 0;
   height: 42px;
   box-sizing: border-box;
   border: 2px solid var(--color-primary, #40ff5e);
